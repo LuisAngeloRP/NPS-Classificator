@@ -5,7 +5,7 @@ from time import sleep
 import json
 
 def create_system_prompt(taxonomy_df):
-    # Crear diccionarios separados para Promotores y Detractores+Pasivos
+    # Create separate dictionaries for Promotores and Detractores+Pasivos
     promotor_dict = {}
     detractor_dict = {}
     
@@ -16,7 +16,6 @@ def create_system_prompt(taxonomy_df):
         desc = row['Descripción']
         tipo_nps = row['TIPO_NPS']
         
-        # Clasificar según TIPO_NPS
         target_dict = promotor_dict if tipo_nps == 'Promotor' else detractor_dict
         
         if cat not in target_dict:
@@ -25,10 +24,9 @@ def create_system_prompt(taxonomy_df):
             target_dict[cat][subcat] = {}
         target_dict[cat][subcat][detail] = desc
 
-    # Crear el texto del prompt con categorías separadas por TIPO_NPS
     taxonomy_text = "CATEGORÍAS POR TIPO DE COMENTARIO:\n\n"
     
-    # Agregar categorías para Promotores
+    # Add categories for Promotores
     taxonomy_text += "=== CATEGORÍAS PARA COMENTARIOS DE PROMOTORES ===\n"
     for cat, subcats in promotor_dict.items():
         taxonomy_text += f"\n{cat}:\n"
@@ -40,7 +38,7 @@ def create_system_prompt(taxonomy_df):
                 else:
                     taxonomy_text += f"  {desc}\n"
     
-    # Agregar categorías para Detractores+Pasivos
+    # Add categories for Detractores+Pasivos
     taxonomy_text += "\n=== CATEGORÍAS PARA COMENTARIOS DE DETRACTORES Y PASIVOS ===\n"
     for cat, subcats in detractor_dict.items():
         taxonomy_text += f"\n{cat}:\n"
@@ -52,33 +50,64 @@ def create_system_prompt(taxonomy_df):
                 else:
                     taxonomy_text += f"  {desc}\n"
 
-    return f"""Eres un clasificador de comentarios de Yape que analiza comentarios considerando si provienen de Promotores o Detractores+Pasivos.
+    return f"""Eres un clasificador experto de comentarios de Yape especializado en análisis detallado de retroalimentación de usuarios. Tu objetivo es comprender profundamente el contexto y la intención detrás de cada comentario, especialmente para usuarios Detractores y Pasivos.
 
 {taxonomy_text}
 
-GUÍA DE INTERPRETACIÓN:
-1. CONSIDERA EL TIPO DE USUARIO:
-   - Promotor: Usuarios satisfechos que recomiendan Yape
-   - Detractor+Pasivo: Usuarios que tienen quejas o no están completamente satisfechos
+GUÍA DE ANÁLISIS PROFUNDO:
 
-2. INTERPRETA EL CONTEXTO:
-   - Para Promotores: Identifica los aspectos específicos que elogian
-   - Para Detractores+Pasivos: Identifica los puntos de dolor o mejora
+1. ANÁLISIS POR TIPO DE USUARIO:
+
+   PARA DETRACTORES Y PASIVOS:
+   - Identifica la causa raíz del problema o insatisfacción
+   - Reconoce múltiples puntos de dolor si existen
+   - Analiza el nivel de frustración en el lenguaje usado
+   - Detecta problemas específicos mencionados implícitamente
+   - Considera el contexto completo del comentario
+   - Identifica si hay un problema técnico, de experiencia o de expectativas
+   
+   PARA PROMOTORES:
+   - Identifica los aspectos específicos que elogian
+   - Reconoce las características más valoradas
+
+2. PAUTAS DE INTERPRETACIÓN AVANZADA:
+   - Busca palabras clave que indiquen problemas específicos
+   - Analiza el tono y la intensidad del comentario
+   - Considera menciones indirectas de problemas
+   - Identifica sugerencias de mejora implícitas
+   - Relaciona quejas específicas con categorías más amplias
+   - Presta especial atención a menciones de:
+     * Problemas técnicos recurrentes
+     * Experiencias negativas con el servicio
+     * Comparaciones con otros servicios
+     * Limitaciones o restricciones
+     * Problemas de seguridad
 
 3. REGLAS DE CLASIFICACIÓN:
-   - Usa solo las categorías permitidas según el TIPO_NPS del comentario
-   - Clasifica tanto menciones positivas como negativas
-   - Prioriza aspectos específicos sobre comentarios generales
-   - Interpreta el contexto completo del comentario
+   - Usa exclusivamente las categorías permitidas según el TIPO_NPS
+   - Prioriza la categorización más específica disponible
+   - Si hay múltiples problemas, selecciona el más crítico o impactante
+   - Asegura que la clasificación refleje la verdadera causa del problema
+   - Verifica que la subcategoría y el detalle sean coherentes con el problema principal
 
-EJEMPLOS DE CLASIFICACIÓN:
-PROMOTOR:
-"La velocidad es excelente" -> {{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
-"Me encanta que todos lo usen" -> {{"categoria": "Accesibilidad", "subcategoria": "Capilaridad", "detalle": "N/A"}}
+EJEMPLOS DE CLASIFICACIÓN DETALLADA:
 
 DETRACTOR+PASIVO:
-"La app es muy lenta" -> {{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
-"Deberían ampliar los límites" -> {{"categoria": "Variedad de productos que faltan", "subcategoria": "Límite Transaccional", "detalle": "Límite Diario"}}
+"La app se pone muy lenta cuando quiero hacer transferencias y a veces se cuelga" -> 
+{{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
+
+"Deberían aumentar los límites de transferencia, es muy poco lo que se puede mover por día" -> 
+{{"categoria": "Variedad de productos que faltan", "subcategoria": "Límite Transaccional", "detalle": "Límite Diario"}}
+
+"No me gusta que para cada cosa me pidan validar mi identidad, es muy tedioso" -> 
+{{"categoria": "Experiencia", "subcategoria": "Validación de Identidad", "detalle": "N/A"}}
+
+PROMOTOR:
+"La velocidad de las transferencias es excelente" -> 
+{{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
+
+"Me encanta que todos mis amigos y familia usen Yape" -> 
+{{"categoria": "Accesibilidad", "subcategoria": "Capilaridad", "detalle": "N/A"}}
 
 Responde solo con el JSON:
 {{"categoria": "categoría", "subcategoria": "subcategoría", "detalle": "detalle"}}"""
