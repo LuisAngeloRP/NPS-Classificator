@@ -130,7 +130,7 @@ def main():
     
     # File upload for taxonomy
     st.subheader("1. Upload Taxonomy File")
-    st.markdown("Required columns: **Categoría**, **Subcategoría**, **Detalle**, **Descripción**")
+    st.markdown("Required columns: **Categoría**, **Subcategoría**, **Detalle**, **Descripción**, **TIPO_NPS**")
     taxonomy_file = st.file_uploader("Upload taxonomy Excel file", type=['xlsx'], key="taxonomy")
     
     # File upload for comments
@@ -148,7 +148,7 @@ def main():
             comments_df = pd.read_excel(comments_file)
             
             # Validate required columns
-            required_taxonomy_columns = ['Categoría', 'Subcategoría', 'Detalle', 'Descripción']
+            required_taxonomy_columns = ['Categoría', 'Subcategoría', 'Detalle', 'Descripción', 'TIPO_NPS']
             required_comments_columns = ['TIPO_NPS', 'comentario']
             
             if not all(col in taxonomy_df.columns for col in required_taxonomy_columns):
@@ -177,8 +177,14 @@ def main():
                     progress_bar.progress(progress)
                     status_text.text(f"Processing comment {idx + 1} of {total_comments}")
                     
-                    # Classify the comment
-                    classification = classify_comment(row['comentario'], client, system_prompt, taxonomy_df)
+                    # Classify the comment - Ahora pasamos el TIPO_NPS y taxonomy_df
+                    classification = classify_comment(
+                        comment=row['comentario'],
+                        tipo_nps=row['TIPO_NPS'],
+                        client=client,
+                        system_prompt=system_prompt,
+                        taxonomy_df=taxonomy_df
+                    )
                     
                     # Add to results
                     result_row = {
