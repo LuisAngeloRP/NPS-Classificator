@@ -5,24 +5,33 @@ from time import sleep
 import json
 
 def create_system_prompt(taxonomy_df):
-    # Crear un diccionario estructurado de la taxonomía
-    taxonomy_dict = {}
+    # Crear diccionarios separados para Promotores y Detractores+Pasivos
+    promotor_dict = {}
+    detractor_dict = {}
+    
     for _, row in taxonomy_df.iterrows():
         cat = row['Categoría']
         subcat = row['Subcategoría']
         detail = row['Detalle'] if row['Detalle'] != '-' else 'N/A'
         desc = row['Descripción']
+        tipo_nps = row['TIPO_NPS']
         
-        if cat not in taxonomy_dict:
-            taxonomy_dict[cat] = {}
-        if subcat not in taxonomy_dict[cat]:
-            taxonomy_dict[cat][subcat] = {}
-        taxonomy_dict[cat][subcat][detail] = desc
+        # Clasificar según TIPO_NPS
+        target_dict = promotor_dict if tipo_nps == 'Promotor' else detractor_dict
+        
+        if cat not in target_dict:
+            target_dict[cat] = {}
+        if subcat not in target_dict[cat]:
+            target_dict[cat][subcat] = {}
+        target_dict[cat][subcat][detail] = desc
 
-    # Crear el texto del prompt con énfasis en las descripciones
-    taxonomy_text = "TAXONOMÍA Y GUÍA DE INTERPRETACIÓN:\n\n"
-    for cat, subcats in taxonomy_dict.items():
-        taxonomy_text += f"=== {cat} ===\n"
+    # Crear el texto del prompt con categorías separadas por TIPO_NPS
+    taxonomy_text = "CATEGORÍAS POR TIPO DE COMENTARIO:\n\n"
+    
+    # Agregar categorías para Promotores
+    taxonomy_text += "=== CATEGORÍAS PARA COMENTARIOS DE PROMOTORES ===\n"
+    for cat, subcats in promotor_dict.items():
+        taxonomy_text += f"\n{cat}:\n"
         for subcat, details in subcats.items():
             taxonomy_text += f"• {subcat}:\n"
             for detail, desc in details.items():
@@ -30,34 +39,81 @@ def create_system_prompt(taxonomy_df):
                     taxonomy_text += f"  - {detail}: {desc}\n"
                 else:
                     taxonomy_text += f"  {desc}\n"
-            taxonomy_text += "\n"
+    
+    # Agregar categorías para Detractores+Pasivos
+    taxonomy_text += "\n=== CATEGORÍAS PARA COMENTARIOS DE DETRACTORES Y PASIVOS ===\n"
+    for cat, subcats in detractor_dict.items():
+        taxonomy_text += f"\n{cat}:\n"
+        for subcat, details in subcats.items():
+            taxonomy_text += f"• {subcat}:\n"
+            for detail, desc in details.items():
+                if detail != "N/A":
+                    taxonomy_text += f"  - {detail}: {desc}\n"
+                else:
+                    taxonomy_text += f"  {desc}\n"
 
-    return f"""Eres un clasificador de comentarios de Yape que debe interpretar y categorizar el sentimiento y la intención del usuario.
+    return f"""Eres un clasificador de comentarios de Yape que analiza comentarios considerando si provienen de Promotores o Detractores+Pasivos.
 
 {taxonomy_text}
 
+GUÍA DE INTERPRETACIÓN:
+1. CONSIDERA EL TIPO DE USUARIO:
+   - Promotor: Usuarios satisfechos que recomiendan Yape
+   - Detractor+Pasivo: Usuarios que tienen quejas o no están completamente satisfechos
 
-INSTRUCCIONES DE CLASIFICACIÓN:
-1. Usa las descripciones como guía para entender el contexto y la intención del usuario
-2. Sé flexible en la interpretación, pero mantén la estructura de categorías existente
-3. Considera sinónimos y expresiones alternativas que apunten a la misma intención
-4. Prioriza el tema principal o la primera preocupación mencionada
-5. Si detectas una intención clara, clasifícala aunque esté expresada de forma indirecta
-6. Solo deja campos vacíos cuando realmente no hay forma de interpretar la intención
+2. INTERPRETA EL CONTEXTO:
+   - Para Promotores: Identifica los aspectos específicos que elogian
+   - Para Detractores+Pasivos: Identifica los puntos de dolor o mejora
 
-EJEMPLOS DE CLASIFICACIÓN FLEXIBLE:
-"No me deja hacer nada" -> {{"categoria": "Problemas en la aplicación", "subcategoria": "Inestabilidad", "detalle": "N/A"}}
-"Quisiera poder usarlo en más sitios" -> {{"categoria": "Accesibilidad", "subcategoria": "Capilaridad", "detalle": "N/A"}}
-"Me limitan mucho las transferencias" -> {{"categoria": "Variedad de productos que faltan", "subcategoria": "Límite Transaccional", "detalle": "Límite Diario"}}
-"Solo funciona con BCP" -> {{"categoria": "Variedad de productos que faltan", "subcategoria": "Otros productos", "detalle": "DNI/OEF"}}
+3. REGLAS DE CLASIFICACIÓN:
+   - Usa solo las categorías permitidas según el TIPO_NPS del comentario
+   - Clasifica tanto menciones positivas como negativas
+   - Prioriza aspectos específicos sobre comentarios generales
+   - Interpreta el contexto completo del comentario
+
+EJEMPLOS DE CLASIFICACIÓN:
+PROMOTOR:
+"La velocidad es excelente" -> {{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
+"Me encanta que todos lo usen" -> {{"categoria": "Accesibilidad", "subcategoria": "Capilaridad", "detalle": "N/A"}}
+
+DETRACTOR+PASIVO:
+"La app es muy lenta" -> {{"categoria": "Velocidad", "subcategoria": "Navegación", "detalle": "N/A"}}
+"Deberían ampliar los límites" -> {{"categoria": "Variedad de productos que faltan", "subcategoria": "Límite Transaccional", "detalle": "Límite Diario"}}
 
 Responde solo con el JSON:
 {{"categoria": "categoría", "subcategoria": "subcategoría", "detalle": "detalle"}}"""
 
-def validate_classification(classification, taxonomy_df):
-    """Validates if the classification exists in the taxonomy"""
+def classify_comment(comment, tipo_nps, client, system_prompt, taxonomy_df, retries=3):
+    for attempt in range(retries):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Classify this {tipo_nps} comment: {comment}"}
+                ],
+                temperature=0.1
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            
+            # Validar que la clasificación existe y corresponde al TIPO_NPS
+            valid_classifications = taxonomy_df[taxonomy_df['TIPO_NPS'] == tipo_nps]
+            if validate_classification(result, valid_classifications):
+                return result
+            else:
+                return {"categoria": "", "subcategoria": "", "detalle": ""}
+                
+        except Exception as e:
+            if attempt == retries - 1:
+                st.error(f"Error processing comment: {str(e)}")
+                return {"categoria": "", "subcategoria": "", "detalle": ""}
+            sleep(1)
+
+def validate_classification(classification, valid_df):
+    """Validates if the classification exists in the allowed taxonomy"""
     exists = False
-    for _, row in taxonomy_df.iterrows():
+    for _, row in valid_df.iterrows():
         category_match = row['Categoría'] == classification['categoria']
         subcategory_match = row['Subcategoría'] == classification['subcategoria']
         detail_match = (row['Detalle'] == classification['detalle']) or \
@@ -68,38 +124,6 @@ def validate_classification(classification, taxonomy_df):
             break
     
     return exists
-
-def classify_comment(comment, client, system_prompt, taxonomy_df, retries=3):
-    for attempt in range(retries):
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Classify this comment: {comment}"}
-                ],
-                temperature=0.1,  # Reduced temperature for more consistent results
-                max_tokens=150
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            
-            # Si todos los campos están vacíos, retornar directamente
-            if not any([result['categoria'], result['subcategoria'], result['detalle']]):
-                return result
-            
-            # Si hay algún campo con contenido, validar que la clasificación existe
-            if validate_classification(result, taxonomy_df):
-                return result
-            else:
-                # Si la clasificación no es válida, retornar campos vacíos
-                return {"categoria": "", "subcategoria": "", "detalle": ""}
-                
-        except Exception as e:
-            if attempt == retries - 1:
-                st.error(f"Error processing comment: {str(e)}")
-                return {"categoria": "", "subcategoria": "", "detalle": ""}
-            sleep(1)
 
 def main():
     st.title("Yape NPS Comment Classifier")
